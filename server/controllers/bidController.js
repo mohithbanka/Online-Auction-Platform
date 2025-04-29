@@ -1,33 +1,38 @@
-const Bid = require('../models/Bid');
-const Product = require('../models/Product');
+const Bid = require("../models/Bid");
+const Product = require("../models/Product");
 
 // Place a new bid
+
 exports.placeBid = async (req, res) => {
-  const { productId, bidAmount } = req.body;
+  try {
+    const { productId, bidAmount } = req.body;
 
-  const product = await Product.findById(productId);
+    if (!productId || !bidAmount) {
+      return res
+        .status(400)
+        .json({ message: "Product ID and amount are required" });
+    }
 
-  if (!product) {
-    return res.status(404).json({ message: 'Product not found' });
+    const bid = new Bid({
+      bidderId: req.user._id, // ✅ Authenticated user ID
+      productId,
+      bidAmount,
+      time: new Date(), // Optional: can be auto-set in schema too
+    });
+
+    const createdBid = await bid.save();
+    res.status(201).json(createdBid);
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Failed to place bid", error: error.message });
   }
-
-  if (new Date() > product.endTime) {
-    return res.status(400).json({ message: 'Auction already ended' });
-  }
-
-  const bid = new Bid({
-    product: productId,
-    bidder: req.user._id,
-    bidAmount,
-  });
-
-  const createdBid = await bid.save();
-  res.status(201).json(createdBid);
 };
 
 // Get all bids for a product
 exports.getBidsForProduct = async (req, res) => {
-  const bids = await Bid.find({ product: req.params.id }).populate('bidder', 'name email').sort({ bidAmount: -1 });
-
+  const bids = await Bid.find({ productId: req.params.id }).sort({
+    bidAmount: -1,
+  });
   res.json(bids);
 };
