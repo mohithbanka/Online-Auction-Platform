@@ -6,6 +6,8 @@ import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+
 const Notification = ({ notification, onMarkAsRead }) => {
   const { user } = useAuth();
   const [isMarking, setIsMarking] = useState(false);
@@ -52,7 +54,7 @@ const Notification = ({ notification, onMarkAsRead }) => {
     setIsAddingToCart(true);
     try {
       await axios.post(
-        'http://localhost:5000/api/cart',
+        `${BACKEND_URL}/api/cart`,
         { auctionId: notification.auction._id },
         {
           headers: {

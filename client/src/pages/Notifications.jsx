@@ -4,6 +4,8 @@ import { useSocket } from '../context/SocketContext';
 import axios from 'axios';
 import Notification from '../components/Notification';
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+
 const Notifications = () => {
   const { user } = useAuth();
   const socket = useSocket();
@@ -20,7 +22,7 @@ const Notifications = () => {
           setLoading(false);
           return;
         }
-        const res = await axios.get('http://localhost:5000/api/notifications', {
+        const res = await axios.get(`${BACKEND_URL}/api/notifications`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -82,7 +84,7 @@ const Notifications = () => {
 
   const markAsRead = async (id) => {
     try {
-      const res = await axios.put(`http://localhost:5000/api/notifications/${id}/read`, null, {
+      const res = await axios.put(`${BACKEND_URL}/api/notifications/${id}/read`, null, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem('token')}`,
         },

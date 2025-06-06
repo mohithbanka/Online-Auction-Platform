@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import axios from 'axios';
 import { toast } from 'react-toastify';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 const BidForm = ({ auction, onBidPlaced }) => {
   const { user } = useAuth();
@@ -86,7 +87,7 @@ const BidForm = ({ auction, onBidPlaced }) => {
 
       try {
         console.log('[BidForm] Fetching bids for auction:', auctionId);
-        const res = await axios.get(`http://localhost:5000/api/bids/${auctionId}`, {
+        const res = await axios.get(`${BACKEND_URL}/api/bids/${auctionId}`, {
           signal: abortController.current.signal,
         });
         setBids(res.data.sort((a, b) => b.amount - a.amount));
@@ -154,7 +155,7 @@ const BidForm = ({ auction, onBidPlaced }) => {
     socket.on('reconnect', async () => {
       console.log('[BidForm] Socket reconnected, refetching bids');
       try {
-        const res = await axios.get(`http://localhost:5000/api/bids/${auctionId}`, {
+        const res = await axios.get(`${BACKEND_URL}/api/bids/${auctionId}`, {
           signal: abortController.current.signal,
         });
         setBids(res.data.sort((a, b) => b.amount - a.amount));
@@ -220,7 +221,7 @@ const BidForm = ({ auction, onBidPlaced }) => {
 
     try {
       const res = await axios.post(
-        `http://localhost:5000/api/bids/${auctionId}`,
+        `${BACKEND_URL}/api/bids/${auctionId}`,
         { amount: numericAmount },
         {
           headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
@@ -249,7 +250,7 @@ const BidForm = ({ auction, onBidPlaced }) => {
         const errorMessage = err.response?.data?.error || 'Failed to place bid';
         toast.error(errorMessage);
         try {
-          const res = await axios.get(`http://localhost:5000/api/bids/${auctionId}`);
+          const res = await axios.get(`${BACKEND_URL}/api/bids/${auctionId}`);
           setBids(res.data.sort((a, b) => b.amount - a.amount));
           console.log('[BidForm] Bids refetched after error:', res.data);
         } catch (fetchErr) {

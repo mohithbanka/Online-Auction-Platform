@@ -5,6 +5,8 @@ import AuctionCard from '../components/AuctionCard';
 import { Link } from 'react-router-dom';
 import moment from 'moment-timezone';
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+
 const Home = () => {
   const [featuredAuctions, setFeaturedAuctions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -12,7 +14,7 @@ const Home = () => {
   useEffect(() => {
     const fetchLiveAuctions = async () => {
       try {
-        const res = await axios.get('http://localhost:5000/api/auctions');
+        const res = await axios.get(`${BACKEND_URL}/api/auctions`);
         const now = moment().tz('Asia/Kolkata');
         const liveOnly = res.data
           .filter(auction => {

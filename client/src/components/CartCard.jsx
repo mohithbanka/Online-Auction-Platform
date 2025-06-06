@@ -3,6 +3,8 @@ import { toast } from 'react-toastify';
 import axios from 'axios';
 import { format } from 'date-fns';
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+
 const CartCard = ({ cartItem, onCheckout }) => {
   const [address, setAddress] = useState('');
   const [isCheckingOut, setIsCheckingOut] = useState(false);
@@ -25,7 +27,7 @@ const CartCard = ({ cartItem, onCheckout }) => {
     setIsCheckingOut(true);
     try {
       await axios.post(
-        'http://localhost:5000/api/cart/checkout',
+        `${BACKEND_URL}/api/cart/checkout`,
         { cartId: cartItem._id, address },
         {
           headers: {

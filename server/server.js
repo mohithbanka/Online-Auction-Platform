@@ -21,9 +21,11 @@ const Notification = require('./models/Notification');
 const app = express();
 const server = http.createServer(app);
 
+// Update Socket.IO CORS configuration to allow multiple origins
 const io = new Server(server, {
   cors: {
-    origin: 'http://localhost:3000',
+    origin: ['https://nexora-ecru.vercel.app', 'http://localhost:3000'], // Allow production and local development
+    methods: ['GET', 'POST'],
     credentials: true,
   },
 });
@@ -40,7 +42,13 @@ io.use((socket, next) => {
 
 app.set('io', io);
 
-app.use(cors({ origin: 'http://localhost:3000', credentials: true }));
+// Update Express CORS configuration to allow multiple origins
+app.use(cors({
+  origin: ['https://nexora-ecru.vercel.app', 'http://localhost:3000'], // Allow production and local development
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true,
+}));
+
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);

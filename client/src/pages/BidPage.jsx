@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import BidForm from '../components/BidForm';
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+
 const BidPage = () => {
   const { id } = useParams();
   const [auction, setAuction] = useState(null);
@@ -10,7 +12,7 @@ const BidPage = () => {
   useEffect(() => {
     const fetchAuction = async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/api/auctions/${id}`);
+        const res = await axios.get(`${BACKEND_URL}/api/auctions/${id}`);
         setAuction(res.data);
       } catch (err) {
         console.error('Failed to fetch auction:', err);

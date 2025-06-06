@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react"; // Added useRef
 import { useSocket } from "../context/SocketContext";
 import Notification from "./Notification";
 import axios from "axios";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 const Navbar = () => {
   const { user, logout } = useAuth();
@@ -39,7 +40,7 @@ const Navbar = () => {
           setNotifications([]);
           return;
         }
-        const res = await axios.get("http://localhost:5000/api/notifications", {
+        const res = await axios.get(`${BACKEND_URL}/api/notifications`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -130,7 +131,7 @@ const Navbar = () => {
   const markAsRead = async (id) => {
     try {
       const res = await axios.put(
-        `http://localhost:5000/api/notifications/${id}/read`,
+        `${BACKEND_URL}/api/notifications/${id}/read`,
         null,
         {
           headers: {

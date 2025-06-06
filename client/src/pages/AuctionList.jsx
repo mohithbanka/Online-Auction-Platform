@@ -1,13 +1,17 @@
 // src/pages/AuctionList.jsx
-import { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { Link, useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import AuctionCard from '../components/AuctionCard';
+import { useState, useEffect } from "react";
+import { useAuth } from "../context/AuthContext";
+import { Link, useNavigate } from "react-router-dom";
+import axios from "axios";
+import AuctionCard from "../components/AuctionCard";
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 const categorizeAuctions = (auctions) => {
   const now = new Date();
-  const live = [], upcoming = [], past = [];
+  const live = [],
+    upcoming = [],
+    past = [];
 
   auctions.forEach((auction) => {
     const start = new Date(auction.startTime);
@@ -24,15 +28,15 @@ const AuctionList = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [auctions, setAuctions] = useState([]);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
     const fetchAuctions = async () => {
       try {
-        const res = await axios.get('http://localhost:5000/api/auctions');
+        const res = await axios.get(`${BACKEND_URL}/api/auctions`);
         setAuctions(res.data);
       } catch (err) {
-        console.error('Failed to fetch auctions:', err);
+        console.error("Failed to fetch auctions:", err);
       }
     };
     fetchAuctions();
@@ -56,9 +60,9 @@ const AuctionList = () => {
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
-        {user?.role === 'seller' && (
+        {user?.role === "seller" && (
           <button
-            onClick={() => navigate('/create-auction')}
+            onClick={() => navigate("/create-auction")}
             className="bg-yellow-500 text-black px-4 py-2 rounded-lg hover:bg-yellow-600 transition"
           >
             Create Auction
@@ -68,9 +72,13 @@ const AuctionList = () => {
 
       {/* Render sections */}
       {[
-        { label: '🟢 Live Auctions', data: live, color: 'text-green-400' },
-        { label: '🟡 Upcoming Auctions', data: upcoming, color: 'text-blue-400' },
-        { label: '🔴 Past Auctions', data: past, color: 'text-red-400' },
+        { label: "🟢 Live Auctions", data: live, color: "text-green-400" },
+        {
+          label: "🟡 Upcoming Auctions",
+          data: upcoming,
+          color: "text-blue-400",
+        },
+        { label: "🔴 Past Auctions", data: past, color: "text-red-400" },
       ].map(
         (section) =>
           section.data.length > 0 && (

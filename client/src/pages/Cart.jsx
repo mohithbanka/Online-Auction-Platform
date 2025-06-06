@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import CartCard from '../components/CartCard';
 import { toast } from 'react-toastify';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 const Cart = () => {
   const [cartItems, setCartItems] = useState([]);
@@ -20,7 +21,7 @@ const Cart = () => {
           setLoading(false);
           return;
         }
-        const res = await axios.get('http://localhost:5000/api/cart', {
+        const res = await axios.get(`${BACKEND_URL}/api/cart`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -47,7 +48,7 @@ const Cart = () => {
 
   const handleDeleteItem = async (id) => {
     try {
-      await axios.delete(`http://localhost:5000/api/cart/${id}`, {
+      await axios.delete(`${BACKEND_URL}/api/cart/${id}`, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
