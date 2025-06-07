@@ -33,7 +33,7 @@ const io = new Server(server, {
 io.use((socket, next) => {
   const userId = socket.handshake.auth.userId;
   if (!userId) {
-    console.log('Socket authentication failed: No userId provided');
+    // console.log('Socket authentication failed: No userId provided');
     return next(new Error('Unauthorized'));
   }
   socket.userId = userId;
@@ -62,22 +62,22 @@ app.get('/', (req, res) => {
 });
 
 io.on('connection', (socket) => {
-  console.log(`User connected: ${socket.id} (User ID: ${socket.userId})`);
+  // console.log(`User connected: ${socket.id} (User ID: ${socket.userId})`);
 
   socket.join(socket.userId);
 
   socket.on('joinAuction', (auctionId) => {
     socket.join(auctionId);
-    console.log(`User ${socket.userId} joined auction ${auctionId} (Socket ID: ${socket.id})`);
+    // console.log(`User ${socket.userId} joined auction ${auctionId} (Socket ID: ${socket.id})`);
   });
 
   socket.on('leaveAuction', (auctionId) => {
     socket.leave(auctionId);
-    console.log(`User ${socket.userId} left auction ${auctionId} (Socket ID: ${socket.id})`);
+    // console.log(`User ${socket.userId} left auction ${auctionId} (Socket ID: ${socket.id})`);
   });
 
   socket.on('disconnect', () => {
-    console.log(`User disconnected: ${socket.id} (User ID: ${socket.userId})`);
+    // console.log(`User disconnected: ${socket.id} (User ID: ${socket.userId})`);
   });
 });
 

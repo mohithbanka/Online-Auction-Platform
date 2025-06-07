@@ -2,16 +2,18 @@ import { useState } from 'react';
 import { toast } from 'react-toastify';
 import axios from 'axios';
 import { format } from 'date-fns';
+import { useAuth } from '../context/AuthContext';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 const CartCard = ({ cartItem, onCheckout }) => {
+  const { logout } = useAuth();
   const [address, setAddress] = useState('');
   const [isCheckingOut, setIsCheckingOut] = useState(false);
 
   if (!cartItem || !cartItem._id || !cartItem.auction) {
     console.error('[CartCard] Invalid cartItem:', cartItem);
-    return <div className="p-4 text-red-500">Error: Invalid cart item</div>;
+    return <div className="p-4 text-red-400 bg-gray-900 rounded-lg">Error: Invalid cart item</div>;
   }
 
   const handleCheckout = async () => {
@@ -19,6 +21,7 @@ const CartCard = ({ cartItem, onCheckout }) => {
       toast.error('Please enter a delivery address', {
         position: 'top-right',
         autoClose: 2000,
+        theme: 'dark',
       });
       return;
     }
@@ -26,37 +29,53 @@ const CartCard = ({ cartItem, onCheckout }) => {
     console.log('[CartCard] Checking out:', cartItem._id);
     setIsCheckingOut(true);
     try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
       await axios.post(
         `${BACKEND_URL}/api/cart/checkout`,
         { cartId: cartItem._id, address },
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
+            Authorization: `Bearer ${token}`,
           },
         }
       );
       toast.success('Checkout successful', {
         position: 'top-right',
         autoClose: 2000,
+        theme: 'dark',
       });
       onCheckout(cartItem._id); // Remove from UI
     } catch (err) {
-      console.error('[CartCard] Error checking out:', err.message);
-      toast.error(err.response?.data?.error || 'Checkout failed', {
-        position: 'top-right',
-        autoClose: 2000,
-      });
+      const message = err.response?.data?.error || err.message || 'Checkout failed';
+      console.error('[CartCard] Error checking out:', message, err.response?.status);
+      if (err.response?.status === 401 || err.message === 'No authentication token found') {
+        logout();
+        toast.error('Session expired, please log in again', {
+          position: 'top-right',
+          autoClose: 2000,
+          theme: 'dark',
+        });
+      } else {
+        toast.error(message, {
+          position: 'top-right',
+          autoClose: 2000,
+          theme: 'dark',
+        });
+      }
     } finally {
       setIsCheckingOut(false);
     }
   };
 
   return (
-    <div className="p-4 bg-gray-50 rounded-md shadow-sm flex flex-col space-y-4">
+    <div className="p-4 bg-gray-800 rounded-lg shadow-md flex flex-col space-y-4">
       <div>
-        <h3 className="text-lg font-semibold text-gray-800">{cartItem.auction.title}</h3>
-        <p className="text-sm text-gray-600">Amount: ${cartItem.amount.toFixed(2)}</p>
-        <p className="text-sm text-gray-500">
+        <h3 className="text-lg font-semibold text-white">{cartItem.auction.title}</h3>
+        <p className="text-sm text-gray-300">Amount: ${cartItem.amount.toFixed(2)}</p>
+        <p className="text-sm text-gray-400">
           Added: {format(new Date(cartItem.addedAt), 'MMM d, yyyy h:mm a')}
         </p>
       </div>
@@ -66,14 +85,16 @@ const CartCard = ({ cartItem, onCheckout }) => {
           value={address}
           onChange={(e) => setAddress(e.target.value)}
           placeholder="Enter delivery address"
-          className="p-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="p-2 bg-gray-900 border border-gray-600 rounded-md text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+          aria-label="Delivery address"
         />
         <button
           onClick={handleCheckout}
           disabled={isCheckingOut}
           className={`p-2 rounded-md text-white ${
-            isCheckingOut ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600'
+            isCheckingOut ? 'bg-gray-600 cursor-not-allowed' : 'bg-cyan-500 hover:bg-cyan-600'
           } transition-all duration-300`}
+          aria-label={isCheckingOut ? 'Processing checkout' : 'Checkout item'}
         >
           {isCheckingOut ? 'Processing...' : 'Checkout'}
         </button>
