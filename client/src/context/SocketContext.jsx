@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+// src/context/SocketProvider.jsx
+import { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import { useAuth } from './AuthContext';
 import { toast } from 'react-toastify';
@@ -6,106 +7,181 @@ import { toast } from 'react-toastify';
 const SocketContext = createContext(null);
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
+// Simple debounce utility to limit toast notifications
+const debounce = (func, wait) => {
+  let timeout;
+  return (...args) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  };
+};
+
 export const SocketProvider = ({ children }) => {
   const [socket, setSocket] = useState(null);
+  const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [connectionError, setConnectionError] = useState('');
-  const { user } = useAuth();
+  const { user, refreshToken, logout } = useAuth();
+
+  // Debounced toast for errors
+  const debouncedToastError = useCallback(
+    debounce((message) => {
+      toast.error(message, {
+        position: 'top-right',
+        autoClose: 3000,
+        theme: 'dark',
+      });
+    }, 2000),
+    []
+  );
+
+  // Debounced toast for success (e.g., reconnection)
+  const debouncedToastSuccess = useCallback(
+    debounce((message) => {
+      toast.success(message, {
+        position: 'top-right',
+        autoClose: 2000,
+        theme: 'dark',
+      });
+    }, 2000),
+    []
+  );
 
   useEffect(() => {
-    if (!user) {
-      // console.log('[SocketProvider] No user, skipping socket connection');
+    if (!BACKEND_URL) {
+      console.error('[SocketProvider] BACKEND_URL is not defined');
+      setConnectionStatus('error');
+      setConnectionError('Server configuration error');
+      debouncedToastError('Unable to connect due to server configuration');
+      return;
+    }
+
+    // Only initialize socket if user and token are present
+    if (!user || !localStorage.getItem('token')) {
       if (socket) {
         socket.disconnect();
         setSocket(null);
+        setConnectionStatus('disconnected');
+        setConnectionError('');
       }
       return;
     }
 
+    // Initialize socket
+    setConnectionStatus('connecting');
     const token = localStorage.getItem('token');
-    if (!token) {
-      // console.log('[SocketProvider] No token found, skipping socket connection');
-      setConnectionError('Authentication required for real-time updates');
-      toast.error('Please log in to enable real-time updates', {
-        position: 'top-right',
-        autoClose: 2000,
-      });
-      return;
-    }
-
-    // console.log('[SocketProvider] Creating socket connection for user:', user.id || user._id);
-
     const newSocket = io(BACKEND_URL, {
       withCredentials: false,
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       auth: { token },
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: 15, // Increased for better reliability
       reconnectionDelay: 1000,
+      randomizationFactor: 0.5,
     });
 
     newSocket.on('connect', () => {
-      // console.log('[SocketProvider] Socket connected:', newSocket.id, 'User:', user.id || user._id);
+      setConnectionStatus('connected');
       setConnectionError('');
-      toast.success('Connected to real-time updates', {
-        position: 'top-right',
-        autoClose: 2000,
-      });
+      if (connectionStatus !== 'connected') {
+        debouncedToastSuccess('Connected to real-time updates');
+      }
+      console.log('[SocketProvider] Connected to server');
     });
 
     newSocket.on('connect_error', (error) => {
       console.error('[SocketProvider] Connection error:', error.message);
+      setConnectionStatus('error');
       setConnectionError('Failed to connect to real-time updates');
-      toast.error('Connection error, retrying...', {
-        position: 'top-right',
-        autoClose: 2000,
-      });
+      debouncedToastError(`Connection error: ${error.message}`);
     });
 
     newSocket.on('reconnect', (attempt) => {
-      // console.log('[SocketProvider] Reconnected after', attempt, 'attempts');
+      setConnectionStatus('connected');
       setConnectionError('');
-      toast.success('Reconnected to real-time updates', {
-        position: 'top-right',
-        autoClose: 2000,
-      });
+      console.log('[SocketProvider] Reconnected after', attempt, 'attempts');
+      debouncedToastSuccess('Reconnected to real-time updates');
     });
 
     newSocket.on('reconnect_failed', () => {
       console.error('[SocketProvider] Reconnection failed');
+      setConnectionStatus('error');
       setConnectionError('Failed to reconnect to real-time updates');
-      toast.error('Failed to reconnect, please refresh the page', {
-        position: 'top-right',
-        autoClose: 2000,
-      });
+      debouncedToastError('Failed to reconnect, please log in again');
+      logout(); // Log out user to force re-authentication
     });
 
     newSocket.on('disconnect', (reason) => {
-      // console.log('[SocketProvider] Socket disconnected:', reason);
       if (reason !== 'io client disconnect') {
+        setConnectionStatus('disconnected');
         setConnectionError('Disconnected from real-time updates');
-        toast.warn('Disconnected, attempting to reconnect...', {
-          position: 'top-right',
-          autoClose: 2000,
-        });
+        debouncedToastError('Disconnected, attempting to reconnect...');
+      }
+      console.log('[SocketProvider] Disconnected:', reason);
+    });
+
+    newSocket.on('error', async (error) => {
+      console.error('[SocketProvider] Socket error:', error.message);
+      if (error.message.includes('token') || error.message.includes('auth')) {
+        try {
+          const newToken = await refreshToken();
+          newSocket.auth.token = newToken;
+          newSocket.connect();
+          console.log('[SocketProvider] Retrying with new token');
+        } catch (err) {
+          setConnectionStatus('error');
+          setConnectionError('Authentication failed');
+          debouncedToastError('Session expired, logging out...');
+          logout(); // Log out if token refresh fails
+        }
+      } else {
+        setConnectionStatus('error');
+        setConnectionError(error.message);
+        debouncedToastError(`Socket error: ${error.message}`);
       }
     });
 
     setSocket(newSocket);
 
     return () => {
-      // console.log('[SocketProvider] Cleaning up socket for user:', user.id || user._id);
-      if (newSocket) {
-        newSocket.disconnect();
-        setSocket(null);
-      }
+      newSocket.off('connect');
+      newSocket.off('connect_error');
+      newSocket.off('reconnect');
+      newSocket.off('reconnect_failed');
+      newSocket.off('disconnect');
+      newSocket.off('error');
+      newSocket.disconnect();
+      setSocket(null);
+      setConnectionStatus('disconnected');
+      setConnectionError('');
     };
-  }, [user]);
+  }, [user, refreshToken, logout, debouncedToastError, debouncedToastSuccess]);
 
-  return (
-    <SocketContext.Provider value={{ socket, connectionError }}>
-      {children}
-    </SocketContext.Provider>
+  const on = useCallback(
+    (event, callback) => {
+      if (socket) {
+        socket.on(event, callback);
+        console.log('[SocketProvider] Subscribed to event:', event);
+      }
+    },
+    [socket]
   );
+
+  const off = useCallback(
+    (event, callback) => {
+      if (socket) {
+        socket.off(event, callback);
+        console.log('[SocketProvider] Unsubscribed from event:', event);
+      }
+    },
+    [socket]
+  );
+
+  const contextValue = useMemo(
+    () => ({ socket, connectionStatus, connectionError, on, off }),
+    [socket, connectionStatus, connectionError, on, off]
+  );
+
+  return <SocketContext.Provider value={contextValue}>{children}</SocketContext.Provider>;
 };
 
 export const useSocket = () => {
@@ -113,5 +189,5 @@ export const useSocket = () => {
   if (context === undefined) {
     throw new Error('useSocket must be used within a SocketProvider');
   }
-  return context.socket;
+  return context;
 };

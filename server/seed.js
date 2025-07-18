@@ -235,14 +235,14 @@ const createOrders = async (users, auctions, count) => {
 
 const seedDatabase = async () => {
   await connectDB();
-  await clearDB();
+  // await clearDB();
 
-  const users = await createUsers(10);
-  const auctions = await createAuctions(users, 20);
-  await createBids(users, auctions, 50);
+  const users = await createUsers(100);
+  const auctions = await createAuctions(users, 200);
+  await createBids(users, auctions, 500);
   await createCartItems(users, auctions, 10);
-  await createNotifications(users, auctions, 30);
-  await createOrders(users, auctions, 10);
+  await createNotifications(users, auctions, 300);
+  await createOrders(users, auctions, 100);
 
   console.log("Database seeding completed!");
   mongoose.connection.close();

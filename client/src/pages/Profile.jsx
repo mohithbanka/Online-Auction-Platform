@@ -1,23 +1,31 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Link } from 'react-router-dom';
-import axios from 'axios';
+import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
-
-function Profile() {
-  const { user, logout } = useAuth();
+const Profile = () => {
+  const { user, updateUser, logout } = useAuth();
+  const navigate = useNavigate();
   const [isEditing, setIsEditing] = useState(false);
-  const [formData, setFormData] = useState({ name: '', email: '' });
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    phoneNumber: '',
+    gender: '',
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Initialize form data
   useEffect(() => {
-    console.log('[Profile] User:', user);
     if (user) {
-      setFormData({ name: user.name || '', email: user.email || '' });
+      setFormData({
+        name: user.name || '',
+        email: user.email || '',
+        phoneNumber: user.phoneNumber || '',
+        gender: user.gender || '',
+      });
       setIsLoading(false);
     } else {
       setError('User data not available');
@@ -25,47 +33,53 @@ function Profile() {
     }
   }, [user]);
 
-  const handleInputChange = (e) => {
+  const handleInputChange = useCallback((e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
-  };
+  }, []);
+
+  const validateForm = useCallback(() => {
+    if (!formData.name.trim()) return 'Name is required';
+    if (!formData.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      return 'Valid email is required';
+    }
+    if (formData.phoneNumber && !/^\+?\d{10,15}$/.test(formData.phoneNumber)) {
+      return 'Phone number must be 10-15 digits (optional country code)';
+    }
+    return '';
+  }, [formData]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('[Profile] Submitting profile update:', formData);
+    const validationError = validateForm();
+    if (validationError) {
+      setError(validationError);
+      toast.error(validationError, {
+        position: 'top-right',
+        autoClose: 3000,
+        theme: 'dark',
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     setError('');
 
     try {
-      const token = localStorage.getItem('token');
-      if (!token) throw new Error('No token found');
-      const res = await axios.put(
-        `${BACKEND_URL}/api/users/me`,
-        formData,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-      console.log('[Profile] Profile updated:', res.data);
+      const updatedUser = await updateUser(formData);
       toast.success('Profile updated successfully', {
         position: 'top-right',
         autoClose: 2000,
+        theme: 'dark',
       });
       setIsEditing(false);
-      // Update user in AuthContext (assuming updateUser exists)
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('user', JSON.stringify(res.data));
-      }
     } catch (err) {
-      const message = err.response?.data?.message || err.message || 'Failed to update profile';
+      const message = err.response?.data?.error || err.message || 'Failed to update profile';
       setError(message);
-      console.error('[Profile] Update error:', {
-        message,
-        status: err.response?.status,
-      });
       toast.error(message, {
         position: 'top-right',
-        autoClose: 2000,
+        autoClose: 3000,
+        theme: 'dark',
       });
     } finally {
       setIsSubmitting(false);
@@ -73,12 +87,13 @@ function Profile() {
   };
 
   const handleLogout = () => {
-    console.log('[Profile] Logging out');
     logout();
     toast.success('Logged out successfully', {
       position: 'top-right',
       autoClose: 2000,
+      theme: 'dark',
     });
+    navigate('/login');
   };
 
   if (isLoading) {
@@ -98,12 +113,12 @@ function Profile() {
               r="10"
               stroke="currentColor"
               strokeWidth="4"
-            ></circle>
+            />
             <path
               className="opacity-75"
               fill="currentColor"
               d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            ></path>
+            />
           </svg>
           <p className="mt-2 text-sm">Loading user details...</p>
         </div>
@@ -114,7 +129,7 @@ function Profile() {
   if (error || !user) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="bg-red-600 text-white p-4 rounded-lg text-sm text-center max-w-md mx-auto">
+        <div className="bg-red-600 text-white p-4 rounded-lg text-sm text-center max-w-md mx-auto" role="alert">
           {error || 'Unable to load profile.'}
           <p className="mt-2">
             <Link to="/" className="text-cyan-400 hover:text-cyan-300 underline">
@@ -135,14 +150,14 @@ function Profile() {
             Your Profile
           </h2>
           <p className="mt-2 text-sm sm:text-base text-gray-300">
-            Manage your account details and auction preferences
+            Manage your account details and {user.role === 'seller' ? 'auctions' : 'bidding preferences'}
           </p>
         </div>
 
         {/* Profile Content */}
         <div className="p-6 sm:p-8">
           {isEditing ? (
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-6" noValidate>
               <div>
                 <label
                   htmlFor="name"
@@ -181,7 +196,47 @@ function Profile() {
                   aria-label="Email"
                 />
               </div>
-              {error && <p className="text-red-500 text-sm">{error}</p>}
+              <div>
+                <label
+                  htmlFor="phoneNumber"
+                  className="block text-sm font-medium text-gray-300"
+                >
+                  Phone Number
+                </label>
+                <input
+                  id="phoneNumber"
+                  name="phoneNumber"
+                  type="tel"
+                  value={formData.phoneNumber}
+                  onChange={handleInputChange}
+                  className="mt-1 w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-white placeholder-gray-400 focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm"
+                  placeholder="Enter your phone number (e.g., +12345678901)"
+                  aria-label="Phone Number"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="gender"
+                  className="block text-sm font-medium text-gray-300"
+                >
+                  Gender
+                </label>
+                <select
+                  id="gender"
+                  name="gender"
+                  value={formData.gender}
+                  onChange={handleInputChange}
+                  className="mt-1 w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-white focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm"
+                  aria-label="Gender"
+                >
+                  <option value="">Select gender</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Other">Other</option>
+                  <option value="Prefer not to say">Prefer not to say</option>
+                </select>
+              </div>
+              {error && <p className="text-red-500 text-sm" role="alert">{error}</p>}
               <div className="flex flex-col sm:flex-row gap-4">
                 <button
                   type="submit"
@@ -208,12 +263,12 @@ function Profile() {
                           r="10"
                           stroke="currentColor"
                           strokeWidth="4"
-                        ></circle>
+                        />
                         <path
                           className="opacity-75"
                           fill="currentColor"
                           d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        ></path>
+                        />
                       </svg>
                       Saving...
                     </span>
@@ -223,7 +278,16 @@ function Profile() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setIsEditing(false)}
+                  onClick={() => {
+                    setIsEditing(false);
+                    setError('');
+                    setFormData({
+                      name: user.name || '',
+                      email: user.email || '',
+                      phoneNumber: user.phoneNumber || '',
+                      gender: user.gender || '',
+                    });
+                  }}
                   className="px-6 py-2 rounded-lg font-medium text-gray-300 border border-gray-600 hover:bg-gray-800 transition-all duration-300"
                   aria-label="Cancel edit"
                 >
@@ -240,6 +304,14 @@ function Profile() {
               <div className="flex items-center space-x-4">
                 <span className="font-semibold text-gray-200 w-24">Email:</span>
                 <span>{user.email || 'N/A'}</span>
+              </div>
+              <div className="flex items-center space-x-4">
+                <span className="font-semibold text-gray-200 w-24">Phone:</span>
+                <span>{user.phoneNumber || 'N/A'}</span>
+              </div>
+              <div className="flex items-center space-x-4">
+                <span className="font-semibold text-gray-200 w-24">Gender:</span>
+                <span>{user.gender || 'N/A'}</span>
               </div>
               <div className="flex items-center space-x-4">
                 <span className="font-semibold text-gray-200 w-24">Role:</span>
@@ -270,13 +342,23 @@ function Profile() {
               >
                 Edit Profile
               </button>
-              <Link
-                to="/auctions/my"
-                className="bg-green-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-green-500 transition-all duration-300 text-center"
-                aria-label="View my auctions"
-              >
-                View My Auctions
-              </Link>
+              {user.role === 'seller' ? (
+                <Link
+                  to="/auctions/my"
+                  className="bg-green-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-green-500 transition-all duration-300 text-center"
+                  aria-label="View my auctions"
+                >
+                  View My Auctions
+                </Link>
+              ) : (
+                <Link
+                  to="/my-bids"
+                  className="bg-green-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-green-500 transition-all duration-300 text-center"
+                  aria-label="View my bids"
+                >
+                  View My Bids
+                </Link>
+              )}
               <button
                 onClick={handleLogout}
                 className="bg-red-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-red-500 transition-all duration-300"
@@ -290,6 +372,6 @@ function Profile() {
       </div>
     </div>
   );
-}
+};
 
 export default Profile;

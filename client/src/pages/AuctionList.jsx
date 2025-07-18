@@ -1,8 +1,11 @@
-import { useState, useEffect } from 'react';
+// src/components/AuctionList.jsx
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import AuctionCard from '../components/AuctionCard';
+import { toast } from 'react-toastify';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
@@ -15,73 +18,199 @@ const categorizeAuctions = (auctions) => {
   auctions.forEach((auction) => {
     const start = new Date(auction.startTime);
     const end = new Date(auction.endTime);
-    if (start <= now && end >= now) live.push(auction);
-    else if (start > now) upcoming.push(auction);
-    else past.push(auction);
+    if (start <= now && end >= now && auction.status === 'active') {
+      live.push(auction);
+    } else if (start > now && auction.status === 'active') {
+      upcoming.push(auction);
+    } else {
+      past.push(auction);
+    }
   });
 
   return { live, upcoming, past };
 };
 
-const AuctionList = () => {
+const AuctionList = ({ isMyAuctions = false }) => {
   const { user } = useAuth();
+  const { socket, connectionStatus, on, off } = useSocket();
   const navigate = useNavigate();
   const [auctions, setAuctions] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [sortOption, setSortOption] = useState('startTime-desc');
+  const [currentTab, setCurrentTab] = useState('live');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const auctionsPerPage = 12;
 
-  useEffect(() => {
-    const fetchAuctions = async () => {
+  const fetchAuctions = useCallback(
+    async (pageNum = 1, append = false, category = 'live') => {
       setIsLoading(true);
       setError('');
       try {
-        const res = await axios.get(`${BACKEND_URL}/api/auctions`, {
+        const endpoint = isMyAuctions
+          ? `${BACKEND_URL}/api/auctions/my`
+          : `${BACKEND_URL}/api/auctions`;
+        const res = await axios.get(endpoint, {
           headers: user ? { Authorization: `Bearer ${localStorage.getItem('token')}` } : {},
+          params: { page: pageNum, limit: auctionsPerPage, category },
         });
-        setAuctions(res.data);
+        const newAuctions = res.data.auctions || [];
+        setAuctions((prev) => (append ? [...prev, ...newAuctions] : newAuctions));
+        setTotalPages(res.data.pages || 1);
+        console.log('[AuctionList] Fetched auctions:', {
+          count: newAuctions.length,
+          page: pageNum,
+          category,
+          totalPages: res.data.pages,
+          endpoint,
+        });
       } catch (err) {
-        setError('Failed to load auctions. Please try again.');
-        console.error('[AuctionList] Fetch error:', err.message);
+        let message = err.response?.data?.error || 'Failed to load auctions. Please try again.';
+        if (err.response?.status === 401 || err.response?.status === 403) {
+          message = 'Please log in as a seller to view your auctions.';
+          navigate('/login');
+        }
+        setError(message);
+        toast.error(message, { position: 'top-right', autoClose: 3000, theme: 'dark' });
+        console.error('[AuctionList] Fetch error:', err.message, err.stack);
       } finally {
         setIsLoading(false);
       }
+    },
+    [user, isMyAuctions, navigate]
+  );
+
+  useEffect(() => {
+    fetchAuctions(1, false, currentTab);
+  }, [fetchAuctions, currentTab]);
+
+  useEffect(() => {
+    if (!socket || connectionStatus !== 'connected') return;
+
+    const handleAuctionUpdate = (updatedAuction) => {
+      setAuctions((prevAuctions) =>
+        prevAuctions.map((auction) =>
+          auction._id === updatedAuction._id ? { ...auction, ...updatedAuction } : auction
+        )
+      );
+      toast.info(`Auction "${updatedAuction.title}" updated`, {
+        position: 'top-right',
+        autoClose: 2000,
+        theme: 'dark',
+      });
     };
-    fetchAuctions();
-  }, [user]);
 
-  // Client-side filter and sort
-  const filteredAuctions = auctions
-    .filter((a) => a.title.toLowerCase().includes(searchTerm.toLowerCase()))
-    .sort((a, b) => {
-      const [field, order] = sortOption.split('-');
-      const multiplier = order === 'asc' ? 1 : -1;
-      if (field === 'startTime') {
-        return multiplier * (new Date(a.startTime) - new Date(b.startTime));
-      }
-      if (field === 'currentBid') {
-        return multiplier * ((a.currentBid || 0) - (b.currentBid || 0));
-      }
-      return 0;
-    });
+    const handleAuctionEnded = ({ auctionId }) => {
+      setAuctions((prevAuctions) => {
+        const updatedAuctions = prevAuctions.map((auction) =>
+          auction._id === auctionId ? { ...auction, status: 'ended' } : auction
+        );
+        return currentTab === 'past'
+          ? updatedAuctions
+          : updatedAuctions.filter((a) => a._id !== auctionId);
+      });
+      toast.info(`Auction ended`, {
+        position: 'top-right',
+        autoClose: 2000,
+        theme: 'dark',
+      });
+    };
 
-  const { live, upcoming, past } = categorizeAuctions(filteredAuctions);
+    const handleNewAuction = (newAuction) => {
+      if (isMyAuctions && newAuction.seller._id !== user?._id) return;
+      if (currentTab === 'live' || currentTab === 'upcoming') {
+        const now = new Date();
+        const start = new Date(newAuction.startTime);
+        const end = new Date(newAuction.endTime);
+        if (
+          (currentTab === 'live' && start <= now && end >= now && newAuction.status === 'active') ||
+          (currentTab === 'upcoming' && start > now && newAuction.status === 'active')
+        ) {
+          setAuctions((prevAuctions) => [newAuction, ...prevAuctions]);
+          toast.info(`New auction "${newAuction.title}" added`, {
+            position: 'top-right',
+            autoClose: 2000,
+            theme: 'dark',
+          });
+        }
+      }
+    };
+
+    const handleNewBid = ({ auctionId, bid }) => {
+      if (!isMyAuctions || user?.role !== 'seller') return;
+      setAuctions((prevAuctions) =>
+        prevAuctions.map((auction) =>
+          auction._id === auctionId
+            ? {
+                ...auction,
+                bids: [...(auction.bids || []), bid],
+                currentBid: bid.amount,
+              }
+            : auction
+        )
+      );
+      toast.info(`New bid of $${bid.amount} on "${prevAuctions.find(a => a._id === auctionId)?.title}"`, {
+        position: 'top-right',
+        autoClose: 2000,
+        theme: 'dark',
+      });
+    };
+
+    on('auctionUpdate', handleAuctionUpdate);
+    on('auctionEnded', handleAuctionEnded);
+    on('newAuction', handleNewAuction);
+    on('newBid', handleNewBid);
+
+    return () => {
+      off('auctionUpdate', handleAuctionUpdate);
+      off('auctionEnded', handleAuctionEnded);
+      off('newAuction', handleNewAuction);
+      off('newBid', handleNewBid);
+    };
+  }, [socket, connectionStatus, on, off, currentTab, isMyAuctions, user]);
+
+  const filteredAuctions = useMemo(() => {
+    return auctions
+      .filter((a) => a.title.toLowerCase().includes(searchTerm.toLowerCase()))
+      .sort((a, b) => {
+        const [field, order] = sortOption.split('-');
+        const multiplier = order === 'asc' ? 1 : -1;
+        if (field === 'startTime') {
+          return multiplier * (new Date(a.startTime) - new Date(b.startTime));
+        }
+        if (field === 'currentBid') {
+          return multiplier * ((a.currentBid || 0) - (b.currentBid || 0));
+        }
+        return 0;
+      });
+  }, [auctions, searchTerm, sortOption]);
+
+  const { live, upcoming, past } = useMemo(() => categorizeAuctions(filteredAuctions), [filteredAuctions]);
+
+  const handleLoadMore = () => {
+    const nextPage = page + 1;
+    setPage(nextPage);
+    fetchAuctions(nextPage, true, currentTab);
+  };
+
+  const currentAuctions = currentTab === 'live' ? live : currentTab === 'upcoming' ? upcoming : past;
 
   return (
     <div className="min-h-screen bg-black text-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header Section */}
         <div className="py-8 animate-slide-in">
           <h1 className="text-2xl sm:text-3xl font-bold text-cyan-400 mb-4">
-            Explore Auctions
+            {isMyAuctions ? 'My Auctions' : 'Explore Auctions'}
           </h1>
           <p className="text-sm text-gray-400 max-w-2xl">
-            Discover rare artifacts, luxury collectibles, and exclusive digital assets.
+            {isMyAuctions
+              ? 'Manage your created auctions and view bids'
+              : 'Discover rare artifacts, luxury collectibles, and exclusive digital assets.'}
           </p>
         </div>
 
-        {/* Search, Sort, and Create */}
         <div className="flex flex-col sm:flex-row items-center gap-4 mb-8">
           <div className="relative flex-1 w-full">
             <input
@@ -117,7 +246,7 @@ const AuctionList = () => {
             <option value="currentBid-desc">Highest Bid</option>
             <option value="currentBid-asc">Lowest Bid</option>
           </select>
-          {user?.role === 'seller' && (
+          {user?.role === 'seller' && !isMyAuctions && (
             <button
               onClick={() => navigate('/create-auction')}
               className="w-full sm:w-auto bg-cyan-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-cyan-500 transition-all duration-300"
@@ -128,62 +257,90 @@ const AuctionList = () => {
           )}
         </div>
 
-        {/* Loading and Error States */}
-        {isLoading && (
-          <div className="text-center text-gray-400 py-8">
-            <svg
-              className="animate-spin h-8 w-8 mx-auto text-cyan-500"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
+        <div className="flex border-b border-gray-700 mb-6" role="tablist">
+          {[
+            { id: 'live', label: `🟢 Live (${live.length})` },
+            { id: 'upcoming', label: `🟡 Upcoming (${upcoming.length})` },
+            { id: 'past', label: `🔴 Past (${past.length})` },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setCurrentTab(tab.id);
+                setPage(1);
+                setAuctions([]);
+              }}
+              className={`px-4 py-2 text-sm font-medium ${
+                currentTab === tab.id
+                  ? 'border-b-2 border-cyan-500 text-cyan-400'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+              role="tab"
+              aria-selected={currentTab === tab.id}
+              aria-label={`View ${tab.id} auctions`}
             >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              ></circle>
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
-            <p className="mt-2">Loading auctions...</p>
-          </div>
-        )}
-        {error && (
-          <div className="bg-red-600 text-white p-3 rounded-lg text-sm text-center mb-8">
-            {error}
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {isLoading && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" aria-live="polite">
+            {Array(auctionsPerPage)
+              .fill()
+              .map((_, i) => (
+                <div key={i} className="bg-gray-800 rounded-lg p-6 animate-pulse">
+                  <div className="h-6 bg-gray-700 rounded mb-4"></div>
+                  <div className="h-4 bg-gray-700 rounded mb-2"></div>
+                  <div className="h-4 bg-gray-700 rounded"></div>
+                </div>
+              ))}
           </div>
         )}
 
-        {/* Auction Sections */}
-        {!isLoading && !error && filteredAuctions.length === 0 && (
-          <div className="text-center text-gray-400 py-8">
-            <p>No auctions match your search.</p>
+        {error && (
+          <div className="bg-red-600 text-white p-3 rounded-lg text-sm text-center mb-8" role="alert">
+            {error}
+            <button
+              onClick={() => fetchAuctions(1, false, currentTab)}
+              className="ml-4 text-cyan-400 hover:underline"
+              aria-label="Retry loading auctions"
+            >
+              Retry
+            </button>
           </div>
         )}
-        {[
-          { label: '🟢 Live Auctions', data: live, color: 'text-green-400' },
-          { label: '🟡 Upcoming Auctions', data: upcoming, color: 'text-blue-400' },
-          { label: '🔴 Past Auctions', data: past, color: 'text-red-400' },
-        ].map(
-          (section) =>
-            section.data.length > 0 && (
-              <div key={section.label} className="mb-10">
-                <h2 className={`text-xl font-semibold mb-4 ${section.color}`}>
-                  {section.label}
-                </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {section.data.map((auction) => (
-                    <AuctionCard key={auction._id} auction={auction} />
-                  ))}
-                </div>
-              </div>
-            )
+
+        {!isLoading && !error && currentAuctions.length === 0 && (
+          <div className="text-center text-gray-400 py-8">
+            <p>No {currentTab} auctions found.</p>
+            <Link
+              to={isMyAuctions ? '/auctions' : '/auctions'}
+              className="text-cyan-500 hover:underline"
+              aria-label={isMyAuctions ? 'Browse all auctions' : 'View all auctions'}
+            >
+              {isMyAuctions ? 'Browse all auctions' : 'View all auctions'}
+            </Link>
+          </div>
+        )}
+        {!isLoading && !error && currentAuctions.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" aria-live="polite">
+            {currentAuctions.map((auction) => (
+              <AuctionCard key={auction._id} auction={auction} isMyAuctions={isMyAuctions} user={user} />
+            ))}
+          </div>
+        )}
+
+        {!isLoading && page < totalPages && currentAuctions.length > 0 && (
+          <div className="text-center mt-8">
+            <button
+              onClick={handleLoadMore}
+              className="bg-cyan-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-cyan-500 transition-all duration-300"
+              aria-label="Load more auctions"
+            >
+              Load More
+            </button>
+          </div>
         )}
       </div>
     </div>

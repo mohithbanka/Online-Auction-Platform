@@ -1,22 +1,23 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
-import { SocketProvider } from './context/SocketContext';
-import { ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
-import RequireAuth from './components/RequireAuth';
-import ErrorBoundary from './components/ErrorBoundary';
-import Navbar from './components/Navbar';
-import Home from './pages/Home';
-import About from './pages/About';
-import Contact from './pages/Contact';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import CreateAuction from './pages/CreateAuction';
-import Profile from './pages/Profile';
-import Cart from './pages/Cart';
-import AuctionList from './pages/AuctionList';
-import BidPage from './pages/BidPage';
-import Notifications from './pages/Notifications';
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { AuthProvider } from "./context/AuthContext";
+import { SocketProvider } from "./context/SocketContext";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import RequireAuth from "./components/RequireAuth";
+import ErrorBoundary from "./components/ErrorBoundary";
+import Navbar from "./components/Navbar";
+import Home from "./pages/Home";
+import About from "./pages/About";
+import Contact from "./pages/Contact";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import CreateAuction from "./pages/CreateAuction";
+import Profile from "./pages/Profile";
+import Cart from "./pages/Cart";
+import AuctionList from "./pages/AuctionList";
+import BidPage from "./pages/BidPage";
+import Notifications from "./pages/Notifications";
+import MyBids from "./pages/MyBids"; // Import the new component
 
 function App() {
   return (
@@ -34,6 +35,7 @@ function App() {
                   <Route path="/login" element={<Login />} />
                   <Route path="/register" element={<Register />} />
                   <Route path="/auctions" element={<AuctionList />} />
+                  <Route path="/auctions/my" element={<AuctionList isMyAuctions={true} />} />
                   <Route path="/auctions/:id" element={<BidPage />} />
                   <Route
                     path="/profile"
@@ -46,7 +48,7 @@ function App() {
                   <Route
                     path="/cart"
                     element={
-                      <RequireAuth roles={['buyer']}>
+                      <RequireAuth roles={["buyer"]}>
                         <Cart />
                       </RequireAuth>
                     }
@@ -54,7 +56,7 @@ function App() {
                   <Route
                     path="/create-auction"
                     element={
-                      <RequireAuth roles={['seller']}>
+                      <RequireAuth roles={["seller"]}>
                         <CreateAuction />
                       </RequireAuth>
                     }
@@ -64,6 +66,14 @@ function App() {
                     element={
                       <RequireAuth>
                         <Notifications />
+                      </RequireAuth>
+                    }
+                  />
+                  <Route
+                    path="/my-bids"
+                    element={
+                      <RequireAuth roles={["buyer"]}>
+                        <MyBids />
                       </RequireAuth>
                     }
                   />

@@ -1,13 +1,14 @@
+// models/User.js
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
-  password: { type: String, required: true, select: false },
-  phoneNumber: { type: String, required: true },
-  gender: { type: String, enum: ['male', 'female', 'other'], required: true },
-  role: { type: String, enum: ['buyer', 'seller'], required: true },
+  password: { type: String, required: true },
+  phoneNumber: { type: String },
+  gender: { type: String },
+  role: { type: String, enum: ['buyer', 'seller', 'admin'], default: 'buyer' },
   createdAt: { type: Date, default: Date.now },
 });
 
@@ -19,18 +20,15 @@ userSchema.pre('save', async function (next) {
     }
     next();
   } catch (err) {
-    next(err); // Properly forward error to Express
+    next(err);
   }
 });
 
 userSchema.methods.comparePassword = async function (password) {
-  
   if (!password || !this.password) {
     throw new Error('Password or stored password is missing');
   }
   return await bcrypt.compare(password, this.password);
 };
-
-
 
 module.exports = mongoose.model('User', userSchema);

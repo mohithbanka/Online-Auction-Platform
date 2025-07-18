@@ -1,163 +1,152 @@
-// src/pages/AuctionDetails.jsx
-import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+// src/components/AuctionDetail.jsx
+import { useState, useEffect } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
-import { useSocket } from '../context/SocketContext';
-import BidForm from '../components/BidForm';
-import BidHistory from '../components/BidHistory';
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 const AuctionDetails = () => {
   const { id } = useParams();
-  const [auction, setAuction] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [bids, setBids] = useState([]);
   const { user } = useAuth();
-  const socket = useSocket();
+  const navigate = useNavigate();
+  const [auction, setAuction] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const fetchAuction = async () => {
+      setIsLoading(true);
+      setError('');
       try {
-        const [auctionRes, bidsRes] = await Promise.all([
-          axios.get(`/api/auctions/${id}`),
-          axios.get(`/api/bids/${id}`),
-        ]);
-        setAuction(auctionRes.data);
-        setBids(bidsRes.data);
-        setLoading(false);
+        const res = await axios.get(`${BACKEND_URL}/api/auctions/${id}`, {
+          headers: user ? { Authorization: `Bearer ${localStorage.getItem('token')}` } : {},
+        });
+        setAuction(res.data);
       } catch (err) {
-        console.error(err);
-        setLoading(false);
+        const message = err.response?.data?.error || 'Failed to load auction. Please try again.';
+        setError(message);
+        toast.error(message, { position: 'top-right', autoClose: 3000, theme: 'dark' });
+      } finally {
+        setIsLoading(false);
       }
     };
-
     fetchAuction();
+  }, [id, user]);
 
-    if (socket) {
-      socket.emit('joinAuction', id);
-      socket.on('newBid', (bid) => {
-        setBids((prev) => [bid, ...prev]);
-        setAuction((prev) => ({ ...prev, currentBid: bid.amount }));
-      });
-      socket.on('auctionEnded', ({ auctionId, winner }) => {
-        if (auctionId === id) {
-          setAuction((prev) => ({ ...prev, status: 'ended', winner }));
-        }
-      });
-    }
-
-    return () => {
-      if (socket) {
-        socket.off('newBid');
-        socket.off('auctionEnded');
-      }
-    };
-  }, [id, socket]);
-
-  const handleBidPlaced = (bid) => {
-    setBids((prev) => [bid, ...prev]);
-    setAuction((prev) => ({ ...prev, currentBid: bid.amount }));
-    if (socket) {
-      socket.emit('newBid', { auctionId: id, bid });
-    }
+  const formatDate = (date) => {
+    return new Date(date).toLocaleString('en-US', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
   };
 
-  if (loading) {
+  const isSeller = user?.role === 'seller' && auction?.seller._id === user._id;
+
+  if (isLoading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        <div className="text-center">
+          <svg
+            className="animate-spin h-8 w-8 text-cyan-400 mx-auto"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+            />
+          </svg>
+          <p className="mt-2 text-gray-400">Loading auction...</p>
+        </div>
       </div>
     );
   }
 
-  if (!auction) {
-    return <div className="text-center py-8">Auction not found</div>;
+  if (error) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        <div className="bg-red-600 text-white p-3 rounded-lg text-sm text-center max-w-md mx-auto" role="alert">
+          {error}
+          <div className="mt-2">
+            <Link to="/auctions" className="text-cyan-400 hover:underline" aria-label="Back to auctions">
+              Back to Auctions
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="max-w-6xl mx-auto">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2">
-          <div className="bg-white rounded-lg shadow-md overflow-hidden">
-            <div className="relative pb-2/3 h-96">
-              <img
-                src={auction.images[0] || '/placeholder-auction.jpg'}
-                alt={auction.title}
-                className="absolute h-full w-full object-cover"
-              />
-            </div>
-            <div className="p-6">
-              <h1 className="text-2xl font-bold mb-2">{auction.title}</h1>
-              <p className="text-gray-600 mb-4">{auction.description}</p>
-              <div className="flex items-center mb-4">
-                <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center mr-3">
-                  <span className="text-indigo-600 text-sm font-semibold">
-                    {auction.seller.name.charAt(0).toUpperCase()}
-                  </span>
-                </div>
-                <div>
-                  <p className="font-medium">{auction.seller.name}</p>
-                  <p className="text-gray-500 text-sm">Seller</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <p className="text-gray-500 text-sm">Starting Price</p>
-                  <p className="text-xl font-semibold">${auction.startPrice}</p>
-                </div>
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <p className="text-gray-500 text-sm">Current Bid</p>
-                  <p className="text-xl font-semibold">${auction.currentBid || auction.startPrice}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-8 bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-bold mb-4">Bid History</h2>
-            {bids.length > 0 ? (
-              <BidHistory bids={bids} />
-            ) : (
-              <p className="text-gray-500">No bids yet</p>
-            )}
-          </div>
+    <div className="min-h-screen bg-black text-white py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto bg-gray-900 rounded-xl shadow-lg overflow-hidden">
+        <div className="bg-gradient-to-r from-cyan-900 to-cyan-700 p-6 sm:p-8">
+          <h2 className="text-2xl sm:text-3xl font-bold text-cyan-400">{auction.title}</h2>
+          <p className="mt-2 text-sm text-gray-300">{auction.description}</p>
         </div>
-
-        <div className="space-y-6">
-          <BidForm auction={auction} onBidPlaced={handleBidPlaced} />
-          
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h3 className="text-lg font-semibold mb-3">Auction Details</h3>
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Status</span>
-                <span className={`font-medium ${
-                  auction.status === 'active' ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  {auction.status === 'active' ? 'Active' : 'Ended'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Start Time</span>
-                <span className="font-medium">
-                  {new Date(auction.startTime).toLocaleString()}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">End Time</span>
-                <span className="font-medium">
-                  {new Date(auction.endTime).toLocaleString()}
-                </span>
-              </div>
-              {auction.status === 'ended' && auction.winner && (
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Winner</span>
-                  <span className="font-medium">
-                    {auction.winner._id === user?.id ? 'You' : auction.winner.name}
-                  </span>
+        <div className="p-6 sm:p-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              {auction.images && auction.images.length > 0 ? (
+                <img
+                  src={auction.images[0]}
+                  alt={auction.title}
+                  className="w-full h-64 object-cover rounded-lg"
+                />
+              ) : (
+                <div className="w-full h-64 bg-gray-700 rounded-lg flex items-center justify-center">
+                  <span className="text-gray-400">No Image</span>
                 </div>
               )}
             </div>
+            <div className="space-y-4">
+              <p className="text-sm text-gray-300">
+                Current Bid: <span className="text-cyan-400">${auction.currentBid || auction.startPrice}</span>
+              </p>
+              <p className="text-sm text-gray-300">
+                Start Time: <span className="text-cyan-400">{formatDate(auction.startTime)}</span>
+              </p>
+              <p className="text-sm text-gray-300">
+                End Time: <span className="text-cyan-400">{formatDate(auction.endTime)}</span>
+              </p>
+              <p className="text-sm text-gray-300">
+                Status: <span className="text-cyan-400">{auction.status}</span>
+              </p>
+              <p className="text-sm text-gray-300">
+                Seller: <span className="text-cyan-400">{auction.seller.name}</span>
+              </p>
+            </div>
+          </div>
+          {isSeller && (
+            <div className="mt-6">
+              <h3 className="text-lg font-semibold text-cyan-400">Bids</h3>
+              {auction.bids && auction.bids.length > 0 ? (
+                <ul className="mt-2 bg-gray-800 rounded-lg p-4 space-y-2" aria-live="polite">
+                  {auction.bids.map((bid) => (
+                    <li key={bid._id} className="text-sm text-gray-300">
+                      <span className="text-cyan-400">${bid.amount}</span> by{' '}
+                      <span className="font-medium">{bid.user.name}</span> at{' '}
+                      {formatDate(bid.createdAt)}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-sm text-gray-400">No bids yet.</p>
+              )}
+            </div>
+          )}
+          <div className="mt-6">
+            <Link
+              to="/auctions"
+              className="inline-block bg-gray-700 text-white px-4 py-2 rounded-lg font-semibold hover:bg-gray-600 transition-all duration-300"
+              aria-label="Back to auctions"
+            >
+              Back to Auctions
+            </Link>
           </div>
         </div>
       </div>
