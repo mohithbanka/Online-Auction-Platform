@@ -7,13 +7,14 @@ import { useAuth } from '../context/AuthContext';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
-const AuctionDetails = () => {
+const AuctionDetail = () => {
   const { id } = useParams();
-  const { user } = useAuth();
+  const { user, walletBalance, loading } = useAuth();
   const navigate = useNavigate();
   const [auction, setAuction] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [bidAmount, setBidAmount] = useState('');
 
   useEffect(() => {
     const fetchAuction = async () => {
@@ -35,6 +36,32 @@ const AuctionDetails = () => {
     fetchAuction();
   }, [id, user]);
 
+  const handlePlaceBid = async (e) => {
+    e.preventDefault();
+    if (!user || user.role !== 'buyer') {
+      toast.error('Please log in as a buyer to place a bid', { position: 'top-right', theme: 'dark' });
+      navigate('/login');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const res = await axios.post(
+        `${BACKEND_URL}/api/auctions/${id}/bids`,
+        { amount: parseFloat(bidAmount) },
+        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+      );
+      setAuction({ ...auction, bids: [...(auction.bids || []), res.data], currentBid: res.data.amount });
+      setBidAmount('');
+      toast.success('Bid placed successfully', { position: 'top-right', theme: 'dark' });
+    } catch (err) {
+      const message = err.response?.data?.error || 'Failed to place bid';
+      toast.error(message, { position: 'top-right', theme: 'dark' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const formatDate = (date) => {
     return new Date(date).toLocaleString('en-US', {
       dateStyle: 'medium',
@@ -43,8 +70,10 @@ const AuctionDetails = () => {
   };
 
   const isSeller = user?.role === 'seller' && auction?.seller._id === user._id;
+  const minBid = auction ? (auction.currentBid > 0 ? auction.currentBid : auction.startPrice) : 0;
+  const canBid = user?.role === 'buyer' && walletBalance > minBid && auction?.status === 'active';
 
-  if (isLoading) {
+  if (loading || isLoading) {
     return (
       <div className="min-h-screen bg-black text-white flex items-center justify-center">
         <div className="text-center">
@@ -119,8 +148,51 @@ const AuctionDetails = () => {
               <p className="text-sm text-gray-300">
                 Seller: <span className="text-cyan-400">{auction.seller.name}</span>
               </p>
+              {user?.role === 'buyer' && (
+                <p className="text-sm text-gray-300">
+                  Your Wallet Balance: <span className="text-cyan-400">${walletBalance.toFixed(2)}</span>
+                </p>
+              )}
             </div>
           </div>
+          {user?.role === 'buyer' && (
+            <form onSubmit={handlePlaceBid} className="mt-6 space-y-4">
+              <div>
+                <label htmlFor="bidAmount" className="block text-sm text-gray-300">
+                  Your Bid (Min: ${(minBid + 0.01).toFixed(2)})
+                </label>
+                <input
+                  id="bidAmount"
+                  type="number"
+                  step="0.01"
+                  min={(minBid + 0.01).toFixed(2)}
+                  value={bidAmount}
+                  onChange={(e) => setBidAmount(e.target.value)}
+                  className="w-full px-4 py-2 mt-1 rounded-lg bg-gray-800 border border-gray-600 text-white placeholder-gray-500 text-sm focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                  placeholder="Enter bid amount"
+                  aria-label="Bid amount"
+                  disabled={isLoading || !canBid}
+                />
+                {!canBid && walletBalance <= minBid && (
+                  <p className="text-sm text-red-400 mt-1">
+                    Insufficient wallet balance. <Link to="/profile" className="text-cyan-400 hover:underline">Add funds</Link>
+                  </p>
+                )}
+              </div>
+              <button
+                type="submit"
+                className={`w-full px-6 py-2 rounded-lg font-medium text-white transition-all duration-300 ${
+                  isLoading || !canBid || !bidAmount || bidAmount <= minBid
+                    ? 'bg-gray-600 cursor-not-allowed'
+                    : 'bg-cyan-600 hover:bg-cyan-500'
+                }`}
+                disabled={isLoading || !canBid || !bidAmount || bidAmount <= minBid}
+                aria-label="Place bid"
+              >
+                {isLoading ? 'Placing Bid...' : 'Place Bid'}
+              </button>
+            </form>
+          )}
           {isSeller && (
             <div className="mt-6">
               <h3 className="text-lg font-semibold text-cyan-400">Bids</h3>
@@ -154,4 +226,4 @@ const AuctionDetails = () => {
   );
 };
 
-export default AuctionDetails;
+export default AuctionDetail;

@@ -1,10 +1,14 @@
+// src/components/Profile.jsx
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import { toast } from 'react-toastify';
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+
 const Profile = () => {
-  const { user, updateUser, logout } = useAuth();
+  const { user, walletBalance, setWalletBalance, updateUser, logout, loading } = useAuth();
   const navigate = useNavigate();
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
@@ -16,8 +20,8 @@ const Profile = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [fundAmount, setFundAmount] = useState('');
 
-  // Initialize form data
   useEffect(() => {
     if (user) {
       setFormData({
@@ -27,11 +31,12 @@ const Profile = () => {
         gender: user.gender || '',
       });
       setIsLoading(false);
-    } else {
+      console.log('[Profile] Current walletBalance:', walletBalance);
+    } else if (!loading) {
       setError('User data not available');
       setIsLoading(false);
     }
-  }, [user]);
+  }, [user, walletBalance, loading]);
 
   const handleInputChange = useCallback((e) => {
     const { name, value } = e.target;
@@ -86,17 +91,53 @@ const Profile = () => {
     }
   };
 
+  const handleAddFunds = async (e) => {
+    e.preventDefault();
+    if (!fundAmount || fundAmount <= 0 || isNaN(fundAmount)) {
+      setError('Valid amount is required');
+      toast.error('Valid amount is required', {
+        position: 'top-right',
+        autoClose: 3000,
+        theme: 'dark',
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+      const res = await axios.post(
+        `${BACKEND_URL}/api/users/me/wallet/add`,
+        { amount: parseFloat(fundAmount) },
+        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+      );
+      setWalletBalance(res.data.walletBalance);
+      setFundAmount('');
+      toast.success(`Added $${parseFloat(fundAmount).toFixed(2)} to wallet`, {
+        position: 'top-right',
+        autoClose: 2000,
+        theme: 'dark',
+      });
+    } catch (err) {
+      const message = err.response?.data?.error || 'Failed to add funds';
+      setError(message);
+      toast.error(message, {
+        position: 'top-right',
+        autoClose: 3000,
+        theme: 'dark',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleLogout = () => {
     logout();
-    toast.success('Logged out successfully', {
-      position: 'top-right',
-      autoClose: 2000,
-      theme: 'dark',
-    });
     navigate('/login');
   };
 
-  if (isLoading) {
+  if (loading || isLoading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
         <div className="text-center text-gray-400">
@@ -144,7 +185,6 @@ const Profile = () => {
   return (
     <div className="min-h-screen bg-black text-white py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-3xl mx-auto bg-gray-900 rounded-xl shadow-lg overflow-hidden">
-        {/* Header Section */}
         <div className="bg-gradient-to-r from-cyan-900 to-cyan-700 text-white p-6 sm:p-8">
           <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-cyan-400">
             Your Profile
@@ -154,7 +194,6 @@ const Profile = () => {
           </p>
         </div>
 
-        {/* Profile Content */}
         <div className="p-6 sm:p-8">
           {isEditing ? (
             <form onSubmit={handleSubmit} className="space-y-6" noValidate>
@@ -318,6 +357,10 @@ const Profile = () => {
                 <span className="capitalize">{user.role || 'N/A'}</span>
               </div>
               <div className="flex items-center space-x-4">
+                <span className="font-semibold text-gray-200 w-24">Wallet:</span>
+                <span>${walletBalance.toFixed(2)}</span>
+              </div>
+              <div className="flex items-center space-x-4">
                 <span className="font-semibold text-gray-200 w-24">Joined:</span>
                 <span>
                   {user.createdAt
@@ -329,10 +372,45 @@ const Profile = () => {
                     : 'N/A'}
                 </span>
               </div>
+              {user.role === 'buyer' && (
+                <form onSubmit={handleAddFunds} className="space-y-4 mt-6">
+                  <div>
+                    <label
+                      htmlFor="fundAmount"
+                      className="block text-sm font-medium text-gray-300"
+                    >
+                      Add Funds to Wallet
+                    </label>
+                    <input
+                      id="fundAmount"
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={fundAmount}
+                      onChange={(e) => setFundAmount(e.target.value)}
+                      className="mt-1 w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-white placeholder-gray-400 focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm"
+                      placeholder="Enter amount"
+                      aria-label="Add funds amount"
+                      disabled={isSubmitting}
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className={`w-full px-6 py-2 rounded-lg font-medium text-white transition-all duration-300 ${
+                      isSubmitting || !fundAmount || fundAmount <= 0
+                        ? 'bg-gray-600 cursor-not-allowed'
+                        : 'bg-cyan-600 hover:bg-cyan-500'
+                    }`}
+                    disabled={isSubmitting || !fundAmount || fundAmount <= 0}
+                    aria-label="Add funds"
+                  >
+                    {isSubmitting ? 'Adding...' : 'Add Funds'}
+                  </button>
+                </form>
+              )}
             </div>
           )}
 
-          {/* Action Buttons */}
           {!isEditing && (
             <div className="mt-8 flex flex-col sm:flex-row gap-4">
               <button

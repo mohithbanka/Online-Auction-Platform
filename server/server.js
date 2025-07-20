@@ -50,7 +50,9 @@ app.use(cors({
 }));
 
 app.use(express.json());
-
+// server.js (partial)
+const userRoutes = require('./routes/users');
+app.use('/api/users', userRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/auctions', auctionRoutes);
 app.use('/api/bids', bidRoutes);

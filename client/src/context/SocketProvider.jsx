@@ -135,10 +135,11 @@ export const SocketProvider = ({ children }) => {
       }
     });
 
-    newSocket.on('walletUpdate', ({ userId, walletBalance }) => {
-      if (userId === user?._id) {
-        setWalletBalance(walletBalance);
-        debouncedToastSuccess(`Wallet updated: $${walletBalance}`);
+    newSocket.on('walletUpdate', ({ userId, walletBalance: newBalance }) => {
+      console.log('[SocketProvider] Received walletUpdate:', { userId, newBalance });
+      if (user && userId === user.id) {
+        setWalletBalance(newBalance);
+        debouncedToastSuccess(`Wallet updated: $${newBalance.toFixed(2)}`);
       }
     });
 

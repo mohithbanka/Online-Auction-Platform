@@ -264,8 +264,18 @@ router.post('/:id/bids', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Auction is not currently active' });
     }
 
-    if (amount <= auction.currentBid || amount <= auction.startPrice) {
-      return res.status(400).json({ error: 'Bid must be higher than current bid or start price' });
+    if (req.user.role !== 'buyer') {
+      return res.status(403).json({ error: 'Only buyers can place bids' });
+    }
+
+    const minBid = auction.currentBid > 0 ? auction.currentBid : auction.startPrice;
+    if (amount <= minBid) {
+      return res.status(400).json({ error: `Bid must be higher than $${minBid}` });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (user.walletBalance < amount) {
+      return res.status(400).json({ error: 'Insufficient wallet balance' });
     }
 
     const bid = new Bid({
@@ -278,10 +288,12 @@ router.post('/:id/bids', authMiddleware, async (req, res) => {
 
     auction.bids.push(bid._id);
     auction.currentBid = amount;
-    if (auction.winner) {
-      auction.winner = req.user.id;
-    }
+    auction.winner = req.user.id;
     await auction.save();
+
+    // Deduct bid amount from wallet (optional: hold funds until auction ends)
+    user.walletBalance -= amount;
+    await user.save();
 
     await bid.populate('user', 'name email');
     await auction.populate('seller', 'name email');
@@ -301,6 +313,10 @@ router.post('/:id/bids', authMiddleware, async (req, res) => {
         createdAt: bid.createdAt,
       },
     });
+    io.to(auction.seller._id.toString()).emit('walletUpdate', {
+      userId: user._id,
+      walletBalance: user.walletBalance,
+    });
 
     res.status(201).json(bid);
   } catch (err) {
@@ -308,7 +324,6 @@ router.post('/:id/bids', authMiddleware, async (req, res) => {
     res.status(500).json({ error: 'Server error: Unable to place bid' });
   }
 });
-
 // module.exports = router;
 
 module.exports = router;

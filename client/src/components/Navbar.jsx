@@ -1,14 +1,17 @@
-import { Link, useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
-import { useEffect, useState, useRef } from "react";
-import { useSocket } from "../context/SocketContext";
-import Notification from "./Notification";
-import axios from "axios";
+// src/components/Navbar.jsx
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
+import { useEffect, useState, useRef } from 'react';
+import Notification from './Notification';
+import axios from 'axios';
+import { toast } from 'react-toastify';
+
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 const Navbar = () => {
-  const { user, logout } = useAuth();
-  const socket = useSocket();
+  const { user, walletBalance, logout, loading } = useAuth();
+  const { socket } = useSocket();
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -21,38 +24,27 @@ const Navbar = () => {
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 10);
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
-
-  const handleLogout = () => {
-    logout();
-    setShowDropdown(false);
-    setMobileMenuOpen(false);
-    navigate("/login");
-  };
 
   useEffect(() => {
     const fetchNotifications = async () => {
       try {
-        const token = localStorage.getItem("token");
+        const token = localStorage.getItem('token');
         if (!token) {
-          // console.log("[Navbar] No token, skipping fetchNotifications");
           setNotifications([]);
           return;
         }
         const res = await axios.get(`${BACKEND_URL}/api/notifications`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { Authorization: `Bearer ${token}` },
         });
         const validNotifications = res.data
-          .filter((n) => n && n._id && typeof n.read === "boolean")
+          .filter((n) => n && n._id && typeof n.read === 'boolean')
           .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
         setNotifications(validNotifications);
-        // console.log("[Navbar] Notifications fetched:", validNotifications);
       } catch (err) {
-        console.error("[Navbar] Error fetching notifications:", err.message);
+        console.error('[Navbar] Error fetching notifications:', err.message);
         setNotifications([]);
       }
     };
@@ -68,21 +60,12 @@ const Navbar = () => {
     if (!socket || !user) return;
 
     const handleNewNotification = (notification) => {
-      // console.log("[Navbar] Received newNotification:", notification);
-      if (
-        !notification ||
-        !notification._id ||
-        typeof notification.read !== "boolean"
-      ) {
-        console.error("[Navbar] Invalid newNotification:", notification);
+      if (!notification || !notification._id || typeof notification.read !== 'boolean') {
+        console.error('[Navbar] Invalid newNotification:', notification);
         return;
       }
       setNotifications((prev) => {
         if (prev.some((n) => n._id === notification._id)) {
-          // console.log(
-          //   "[Navbar] Duplicate notification ignored:",
-          //   notification._id
-          // );
           return prev;
         }
         return [notification, ...prev].sort(
@@ -92,18 +75,17 @@ const Navbar = () => {
     };
 
     const handleNotificationRead = ({ _id, read }) => {
-      // console.log("[Navbar] Received notificationRead:", { _id, read });
       setNotifications((prev) =>
         prev.map((n) => (n._id === _id ? { ...n, read } : n))
       );
     };
 
-    socket.on("newNotification", handleNewNotification);
-    socket.on("notificationRead", handleNotificationRead);
+    socket.on('newNotification', handleNewNotification);
+    socket.on('notificationRead', handleNotificationRead);
 
     return () => {
-      socket.off("newNotification", handleNewNotification);
-      socket.off("notificationRead", handleNotificationRead);
+      socket.off('newNotification', handleNewNotification);
+      socket.off('notificationRead', handleNotificationRead);
     };
   }, [socket, user]);
 
@@ -112,66 +94,66 @@ const Navbar = () => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setShowDropdown(false);
       }
-      if (
-        notificationsRef.current &&
-        !notificationsRef.current.contains(event.target)
-      ) {
+      if (notificationsRef.current && !notificationsRef.current.contains(event.target)) {
         setShowNotifications(false);
       }
     };
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const markAsRead = async (id) => {
     try {
-      const res = await axios.put(
+      await axios.put(
         `${BACKEND_URL}/api/notifications/${id}/read`,
         null,
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        }
+        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
       );
       setNotifications((prev) =>
         prev.map((n) => (n._id === id ? { ...n, read: true } : n))
       );
-      // console.log("[Navbar] Marked as read:", res.data);
     } catch (err) {
-      console.error("[Navbar] Error marking as read:", err.message);
-      throw err;
+      console.error('[Navbar] Error marking as read:', err.message);
+      toast.error('Failed to mark notification as read', {
+        position: 'top-right',
+        autoClose: 3000,
+        theme: 'dark',
+      });
     }
   };
 
   const handleViewAllClick = (e) => {
     e.stopPropagation();
-    // console.log("[Navbar] View all clicked");
     setShowNotifications(false);
-    navigate("/notifications");
+    navigate('/notifications');
+  };
+
+  const handleLogout = () => {
+    logout();
+    setShowDropdown(false);
+    setMobileMenuOpen(false);
+    navigate('/login');
   };
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
+  if (loading) {
+    return null;
+  }
+
   return (
     <nav
       className={`fixed w-full z-50 transition-all duration-300 ${
-        scrolled
-          ? "bg-black/95 backdrop-blur-sm shadow-md py-3"
-          : "bg-black py-4"
+        scrolled ? 'bg-black/95 backdrop-blur-sm shadow-md py-3' : 'bg-black py-4'
       }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center">
-        {/* Logo */}
         <Link to="/" className="flex items-center space-x-2">
           <span className="text-2xl font-bold text-cyan-400">Nex</span>
           <span className="text-2xl font-bold text-white">ora</span>
         </Link>
 
-        {/* Desktop Menu */}
         <div className="hidden md:flex items-center space-x-6">
           <Link
             to="/"
@@ -187,7 +169,7 @@ const Navbar = () => {
           </Link>
           {user ? (
             <>
-              {user.role === "seller" ? (
+              {user.role === 'seller' ? (
                 <Link
                   to="/create-auction"
                   className="text-gray-300 hover:text-cyan-400 transition-colors duration-200 text-base font-medium"
@@ -221,11 +203,14 @@ const Navbar = () => {
           )}
         </div>
 
-        {/* User Actions */}
         <div className="flex items-center space-x-4">
           {user ? (
             <>
-              {/* Notifications */}
+              {user.role === 'buyer' && (
+                <div className="text-gray-300 text-sm font-medium">
+                  Wallet: <span className="text-cyan-400">${walletBalance.toFixed(2)}</span>
+                </div>
+              )}
               <div className="relative" ref={notificationsRef}>
                 <button
                   onClick={() => setShowNotifications(!showNotifications)}
@@ -283,9 +268,7 @@ const Navbar = () => {
                   </div>
                 )}
               </div>
-
-              {/* Cart (for buyers) */}
-              {user.role === "buyer" && (
+              {user.role === 'buyer' && (
                 <Link
                   to="/cart"
                   className="text-gray-300 hover:text-cyan-400 transition-colors duration-200 p-1 rounded-full focus:outline-none focus:ring-2 focus:ring-cyan-400"
@@ -306,8 +289,6 @@ const Navbar = () => {
                   </svg>
                 </Link>
               )}
-
-              {/* Profile Dropdown */}
               <div className="relative" ref={dropdownRef}>
                 <button
                   onClick={() => setShowDropdown(!showDropdown)}
@@ -322,7 +303,7 @@ const Navbar = () => {
                   </span>
                 </button>
                 {showDropdown && (
-                  <div className="absolute right-0 mt-3 w-56 bg-gray-900 rounded-lg shadow-xl py-2 z-50 border border-gray-700">
+                  <div className="absolute right-0 mt-3 w 56 bg-gray-900 rounded-lg shadow-xl py-2 z-50 border border-gray-700">
                     <Link
                       to="/profile"
                       className="block px-4 py-2 text-gray-200 hover:bg-gray-800 hover:text-cyan-400 transition-colors text-sm font-medium"
@@ -330,14 +311,23 @@ const Navbar = () => {
                     >
                       Profile
                     </Link>
-                    {user.role === "buyer" && (
-                      <Link
-                        to="/cart"
-                        className="block px-4 py-2 text-gray-200 hover:bg-gray-800 hover:text-cyan-400 transition-colors text-sm font-medium"
-                        onClick={() => setShowDropdown(false)}
-                      >
-                        My Cart
-                      </Link>
+                    {user.role === 'buyer' && (
+                      <>
+                        <Link
+                          to="/cart"
+                          className="block px-4 py-2 text-gray-200 hover:bg-gray-800 hover:text-cyan-400 transition-colors text-sm font-medium"
+                          onClick={() => setShowDropdown(false)}
+                        >
+                          My Cart
+                        </Link>
+                        <Link
+                          to="/profile"
+                          className="block px-4 py-2 text-gray-200 hover:bg-gray-800 hover:text-cyan-400 transition-colors text-sm font-medium"
+                          onClick={() => setShowDropdown(false)}
+                        >
+                          Wallet: ${walletBalance.toFixed(2)}
+                        </Link>
+                      </>
                     )}
                     <button
                       onClick={handleLogout}
@@ -359,7 +349,6 @@ const Navbar = () => {
           )}
         </div>
 
-        {/* Mobile Menu Button */}
         <div className="md:hidden">
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -378,8 +367,8 @@ const Navbar = () => {
                 strokeLinejoin="round"
                 d={
                   mobileMenuOpen
-                    ? "M6 18L18 6M6 6l12 12"
-                    : "M4 6h16M4 12h16M4 18h16"
+                    ? 'M6 18L18 6M6 6l12 12'
+                    : 'M4 6h16M4 12h16M4 18h16'
                 }
               />
             </svg>
@@ -387,7 +376,6 @@ const Navbar = () => {
         </div>
       </div>
 
-      {/* Mobile Menu */}
       {mobileMenuOpen && (
         <div className="md:hidden bg-black/95 backdrop-blur-sm px-6 py-4">
           <div className="flex flex-col space-y-3">
@@ -407,7 +395,7 @@ const Navbar = () => {
             </Link>
             {user ? (
               <>
-                {user.role === "seller" ? (
+                {user.role === 'seller' ? (
                   <Link
                     to="/create-auction"
                     className="text-gray-300 hover:text-cyan-400 transition-colors duration-200 text-base font-medium"
@@ -416,14 +404,36 @@ const Navbar = () => {
                     Create Auction
                   </Link>
                 ) : (
-                  <Link
-                    to="/my-bids"
-                    className="text-gray-300 hover:text-cyan-400 transition-colors duration-200 text-base font-medium"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    My Bids
-                  </Link>
+                  <>
+                    <Link
+                      to="/my-bids"
+                      className="text-gray-300 hover:text-cyan-400 transition-colors duration-200 text-base font-medium"
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      My Bids
+                    </Link>
+                    <Link
+                      to="/cart"
+                      className="text-gray-300 hover:text-cyan-400 transition-colors duration-200 text-base font-medium"
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      My Cart
+                    </Link>
+                    <Link
+                      to="/profile"
+                      className="text-gray-300 hover:text-cyan-400 transition-colors duration-200 text-base font-medium"
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      Wallet: ${walletBalance.toFixed(2)}
+                    </Link>
+                  </>
                 )}
+                <button
+                  onClick={handleLogout}
+                  className="text-gray-300 hover:text-cyan-400 transition-colors duration-200 text-base font-medium text-left"
+                >
+                  Logout
+                </button>
               </>
             ) : (
               <>
@@ -440,6 +450,13 @@ const Navbar = () => {
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   Contact
+                </Link>
+                <Link
+                  to="/login"
+                  className="text-gray-300 hover:text-cyan-400 transition-colors duration-200 text-base font-medium"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Sign In
                 </Link>
               </>
             )}

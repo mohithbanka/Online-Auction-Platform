@@ -9,6 +9,7 @@ const userSchema = new mongoose.Schema({
   phoneNumber: { type: String },
   gender: { type: String },
   role: { type: String, enum: ['buyer', 'seller', 'admin'], default: 'buyer' },
+  walletBalance: { type: Number, default: 0, min: 0 }, // Added wallet balance
   createdAt: { type: Date, default: Date.now },
 });
 

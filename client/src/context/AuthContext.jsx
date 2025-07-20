@@ -1,52 +1,37 @@
+// src/context/AuthContext.jsx
 import { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 
-// Optional TypeScript types (uncomment if using TypeScript)
-// interface User {
-//   id: string;
-//   email: string;
-//   createdAt: string;
-//   [key: string]: any;
-// }
-// interface AuthContextType {
-//   user: User | null;
-//   loading: boolean;
-//   error: string;
-//   login: (credentials: { email: string; password: string }) => Promise<User>;
-//   register: (userData: { email: string; password: string; [key: string]: any }) => Promise<User>;
-//   logout: () => void;
-//   updateUser: (updates: Partial<User>) => Promise<User>;
-//   refreshToken: () => Promise<string>;
-// }
-
-const AuthContext = createContext/*<AuthContextType>*/(null);
+const AuthContext = createContext(null);
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
-// Token refresh interval (e.g., every 15 minutes)
 const TOKEN_REFRESH_INTERVAL = 15 * 60 * 1000;
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(false); // Initialize loading to false
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Check authentication on mount
   useEffect(() => {
     const checkAuth = async () => {
+      setLoading(true);
       try {
         const token = localStorage.getItem('token');
         const storedUser = localStorage.getItem('user');
 
         if (!token || !storedUser) {
           setUser(null);
+          setWalletBalance(0);
+          setLoading(false);
           return;
         }
 
-        // Parse user data and set it immediately for faster rendering
         const parsedUser = JSON.parse(storedUser);
         setUser(parsedUser);
+        setWalletBalance(parsedUser.walletBalance || 0);
 
-        // Validate token with the server
+        // Fetch latest user data
         const res = await axios.get(`${BACKEND_URL}/api/auth/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -60,8 +45,20 @@ export const AuthProvider = ({ children }) => {
           id: res.data.user._id,
           createdAt: res.data.user.createdAt || new Date().toISOString(),
         };
+
+        // Fallback: Fetch wallet balance if not in /api/auth/me
+        let finalWalletBalance = userData.walletBalance || 0;
+        if (!userData.walletBalance) {
+          const walletRes = await axios.get(`${BACKEND_URL}/api/users/me/wallet`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          finalWalletBalance = walletRes.data.walletBalance || 0;
+        }
+
         setUser(userData);
-        localStorage.setItem('user', JSON.stringify(userData));
+        setWalletBalance(finalWalletBalance);
+        localStorage.setItem('user', JSON.stringify({ ...userData, walletBalance: finalWalletBalance }));
+        console.log('[AuthContext] Initial walletBalance:', finalWalletBalance);
       } catch (err) {
         const message = err.response?.data?.error || err.message || 'Authentication failed';
         console.error('[AuthProvider] Auth check error:', {
@@ -84,13 +81,15 @@ export const AuthProvider = ({ children }) => {
           });
         }
         setUser(null);
+        setWalletBalance(0);
+      } finally {
+        setLoading(false);
       }
     };
 
     checkAuth();
   }, []);
 
-  // Periodic token refresh
   useEffect(() => {
     if (!user) return;
 
@@ -98,7 +97,7 @@ export const AuthProvider = ({ children }) => {
       try {
         await refreshToken();
       } catch (err) {
-        // Error handling is done in refreshToken
+        // Handled in refreshToken
       }
     }, TOKEN_REFRESH_INTERVAL);
 
@@ -107,6 +106,7 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (credentials) => {
     setError('');
+    setLoading(true);
     try {
       const res = await axios.post(`${BACKEND_URL}/api/auth/login`, credentials);
       if (!res.data?.user || !res.data?.token) {
@@ -118,6 +118,7 @@ export const AuthProvider = ({ children }) => {
         createdAt: res.data.user.createdAt || new Date().toISOString(),
       };
       setUser(userData);
+      setWalletBalance(userData.walletBalance || 0);
       localStorage.setItem('token', res.data.token);
       localStorage.setItem('user', JSON.stringify(userData));
       toast.success('Logged in successfully', {
@@ -139,11 +140,14 @@ export const AuthProvider = ({ children }) => {
         theme: 'dark',
       });
       throw err;
+    } finally {
+      setLoading(false);
     }
   };
 
   const register = async (userData) => {
     setError('');
+    setLoading(true);
     try {
       const res = await axios.post(`${BACKEND_URL}/api/auth/register`, userData);
       if (!res.data?.user || !res.data?.token) {
@@ -155,6 +159,7 @@ export const AuthProvider = ({ children }) => {
         createdAt: res.data.user.createdAt || new Date().toISOString(),
       };
       setUser(registeredUser);
+      setWalletBalance(registeredUser.walletBalance || 0);
       localStorage.setItem('token', res.data.token);
       localStorage.setItem('user', JSON.stringify(registeredUser));
       toast.success('Registration successful', {
@@ -176,11 +181,14 @@ export const AuthProvider = ({ children }) => {
         theme: 'dark',
       });
       throw err;
+    } finally {
+      setLoading(false);
     }
   };
 
   const logout = () => {
     setUser(null);
+    setWalletBalance(0);
     setError('');
     localStorage.removeItem('token');
     localStorage.removeItem('user');
@@ -191,13 +199,13 @@ export const AuthProvider = ({ children }) => {
     });
   };
 
- const updateUser = async (updates) => {
+  const updateUser = async (updates) => {
     setError('');
+    setLoading(true);
     try {
       const token = localStorage.getItem('token');
       if (!token) throw new Error('No token found');
       const res = await axios.put(`${BACKEND_URL}/api/auth/me`, updates, {
-        // Changed from /api/users/me to /api/auth/me
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.data.user) throw new Error('Invalid update response');
@@ -207,6 +215,7 @@ export const AuthProvider = ({ children }) => {
         createdAt: res.data.user.createdAt || new Date().toISOString(),
       };
       setUser(updatedUser);
+      setWalletBalance(updatedUser.walletBalance || 0);
       localStorage.setItem('user', JSON.stringify(updatedUser));
       toast.success('Profile updated successfully', {
         position: 'top-right',
@@ -227,6 +236,8 @@ export const AuthProvider = ({ children }) => {
         theme: 'dark',
       });
       throw err;
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -241,6 +252,16 @@ export const AuthProvider = ({ children }) => {
       );
       if (!res.data?.token) throw new Error('Invalid refresh response');
       localStorage.setItem('token', res.data.token);
+      if (res.data.user) {
+        const userData = {
+          ...res.data.user,
+          id: res.data.user._id,
+          createdAt: res.data.user.createdAt || new Date().toISOString(),
+        };
+        setUser(userData);
+        setWalletBalance(userData.walletBalance || 0);
+        localStorage.setItem('user', JSON.stringify(userData));
+      }
       return res.data.token;
     } catch (err) {
       console.error('[AuthProvider] Token refresh error:', {
@@ -257,10 +278,9 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Memoize context value to prevent unnecessary re-renders
   const contextValue = useMemo(
-    () => ({ user, loading, error, login, register, logout, updateUser, refreshToken }),
-    [user, loading, error]
+    () => ({ user, walletBalance, setWalletBalance, loading, error, login, register, logout, updateUser, refreshToken }),
+    [user, walletBalance, loading, error]
   );
 
   return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>;
